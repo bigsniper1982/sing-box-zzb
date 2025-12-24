@@ -1289,16 +1289,55 @@ resshadowtls(){
 if [[ "$shadowtls_enable" == "true" ]]; then
     echo
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    stls_link="vless://$uuid@$server_ip:$shadowtls_port?security=shadowtls&type=tcp&shadowtls=$(echo -n "$shadowtls_password:$shadowtls_domain" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")#shadowtls-$hostname"
-    
-    echo "$stls_link" > /etc/s-box/shadowtls.txt
-    red "🚀【 VLESS-ShadowTLS 】节点信息如下：" && sleep 2
+    red "🚀【 VLESS-ShadowTLS-v3 】节点信息如下：" && sleep 2
     echo
-    echo "分享链接【NekoBox等支持ShadowTLS的客户端】"
-    echo -e "${yellow}$stls_link${plain}"
+    blue "需要使用支持 ShadowTLS v3 的客户端（如 NekoBox、sing-box 等）"
     echo
-    echo "二维码【NekoBox等支持ShadowTLS的客户端】"
-    qrencode -o - -t ANSIUTF8 "$(cat /etc/s-box/shadowtls.txt)"
+    yellow "服务器地址: $server_ipcl"
+    yellow "端口: $shadowtls_port"
+    yellow "UUID: $uuid"
+    yellow "ShadowTLS 密码: $shadowtls_password"
+    yellow "TLS 握手域名: $shadowtls_domain"
+    yellow "版本: 3"
+    yellow "指纹: chrome"
+    echo
+    green "手动配置参考 (sing-box客户端):"
+    cat > /etc/s-box/shadowtls_config.json <<STLS_EOF
+{
+  "outbounds": [
+    {
+      "tag": "shadowtls-out",
+      "type": "shadowtls",
+      "server": "$server_ipcl",
+      "server_port": $shadowtls_port,
+      "version": 3,
+      "password": "$shadowtls_password",
+      "tls": {
+        "enabled": true,
+        "server_name": "$shadowtls_domain",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      }
+    },
+    {
+      "tag": "vless-out",
+      "type": "vless",
+      "server": "127.0.0.1",
+      "server_port": 0,
+      "uuid": "$uuid",
+      "flow": "",
+      "packet_encoding": "xudp",
+      "transport": {
+        "type": "tcp"
+      },
+      "detour": "shadowtls-out"
+    }
+  ]
+}
+STLS_EOF
+    cat /etc/s-box/shadowtls_config.json
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     echo
 fi
@@ -1624,7 +1663,7 @@ cat <<EOF2
         {
             "tag": "shadowtls-$hostname",
             "type": "shadowtls",
-            "server": "$server_ip",
+            "server": "$cl_hy2_ip",
             "server_port": $shadowtls_port,
             "version": 3,
             "password": "$shadowtls_password",
@@ -1641,10 +1680,14 @@ cat <<EOF2
             "tag": "vless-shadowtls-$hostname",
             "type": "vless",
             "server": "127.0.0.1",
-            "server_port": 1080, 
+            "server_port": 0,
             "uuid": "$uuid",
             "flow": "",
-            "detour": "shadowtls-$hostname" 
+            "packet_encoding": "xudp",
+            "transport": {
+                "type": "tcp"
+            },
+            "detour": "shadowtls-$hostname"
         },
 EOF2
 fi)
