@@ -361,6 +361,46 @@ chooseport
 port_tu=$port
 }
 
+insshadowtls(){
+red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+green "四、设置ShadowTLS协议"
+yellow "1：开启ShadowTLS协议 (回车默认)"
+yellow "2：关闭ShadowTLS协议"
+readp "请选择【1-2】：" menu
+if [ -z "$menu" ] || [ "$menu" = "1" ]; then
+    shadowtls=true
+    readp "\n设置ShadowTLS端口[1-65535] (回车跳过为10000-65535之间的随机端口)：" port
+    chooseport
+    port_shadowtls=$port
+    
+    # Generate local vless port
+    while true; do
+        port=$(shuf -i 10000-65535 -n 1)
+        if [[ -z $(ss -tunlp | grep -w tcp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") && -z $(ss -tunlp | grep -w udp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") ]]; then
+            port_vless_local=$port
+            break
+        fi
+    done
+    
+    readp "\n设置ShadowTLS密码 (回车随机生成)：" password
+    if [[ -z "$password" ]]; then
+        shadowtls_password=$(cat /proc/sys/kernel/random/uuid)
+        blue "已生成随机密码：$shadowtls_password"
+    else
+        shadowtls_password=$password
+    fi
+
+    readp "\n设置ShadowTLS握手域名 (回车默认 www.bing.com)：" domain
+    if [[ -z "$domain" ]]; then
+        shadowtls_domain="www.bing.com"
+    else
+        shadowtls_domain=$domain
+    fi
+else
+    shadowtls=false
+fi
+}
+
 insport(){
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 green "三、设置各个协议端口"
@@ -524,6 +564,40 @@ cat > /etc/s-box/sb10.json <<EOF
                 "key_path": "$certificatep_tuic"
             }
         }
+$(if [ "$shadowtls" = "true" ]; then
+cat <<EOF_INNER
+,
+        {
+            "type": "shadowtls",
+            "tag": "shadowtls-in",
+            "listen": "::",
+            "listen_port": ${port_shadowtls},
+            "detour": "vless-shadowtls-in",
+            "version": 3,
+            "users": [
+                {
+                    "password": "${shadowtls_password}"
+                }
+            ],
+            "handshake": {
+                "server": "${shadowtls_domain}",
+                "server_port": 443
+            }
+        },
+        {
+            "type": "vless",
+            "tag": "vless-shadowtls-in",
+            "listen": "127.0.0.1",
+            "listen_port": ${port_vless_local},
+            "users": [
+                {
+                    "uuid": "${uuid}",
+                    "flow": ""
+                }
+            ]
+        }
+EOF_INNER
+fi)
 ],
 "outbounds": [
 {
@@ -768,6 +842,40 @@ cat > /etc/s-box/sb11.json <<EOF
                 "key_path": "$certificatep_tuic"
             }
         }
+$(if [ "$shadowtls" = "true" ]; then
+cat <<EOF_INNER
+,
+        {
+            "type": "shadowtls",
+            "tag": "shadowtls-in",
+            "listen": "::",
+            "listen_port": ${port_shadowtls},
+            "detour": "vless-shadowtls-in",
+            "version": 3,
+            "users": [
+                {
+                    "password": "${shadowtls_password}"
+                }
+            ],
+            "handshake": {
+                "server": "${shadowtls_domain}",
+                "server_port": 443
+            }
+        },
+        {
+            "type": "vless",
+            "tag": "vless-shadowtls-in",
+            "listen": "127.0.0.1",
+            "listen_port": ${port_vless_local},
+            "users": [
+                {
+                    "uuid": "${uuid}",
+                    "flow": ""
+                }
+            ]
+        }
+EOF_INNER
+fi)
 ],
 "endpoints":[
 {
@@ -1059,14 +1167,18 @@ if [[ "$tu5_sniname" = '/etc/s-box/private.key' ]]; then
 tu5_name=www.bing.com
 sb_tu5_ip=$server_ip
 cl_tu5_ip=$server_ipcl
-ins=1
-tu5_ins=true
-else
-tu5_name=$ym
-sb_tu5_ip=$ym
-cl_tu5_ip=$ym
 ins=0
 tu5_ins=false
+fi
+
+# ShadowTLS info extraction
+shadowtls_port=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[] | select(.type=="shadowtls") | .listen_port')
+if [[ -n "$shadowtls_port" && "$shadowtls_port" != "null" ]]; then
+    shadowtls_enable=true
+    shadowtls_password=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[] | select(.type=="shadowtls") | .users[0].password')
+    shadowtls_domain=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[] | select(.type=="shadowtls") | .handshake.server')
+else
+    shadowtls_enable=false
 fi
 }
 
@@ -1171,6 +1283,25 @@ echo "二维码【v2rayn、nekobox、小火箭shadowrocket】"
 qrencode -o - -t ANSIUTF8 "$(cat /etc/s-box/tuic5.txt)"
 white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo
+}
+
+resshadowtls(){
+if [[ "$shadowtls_enable" == "true" ]]; then
+    echo
+    white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    stls_link="vless://$uuid@$server_ip:$shadowtls_port?security=shadowtls&type=tcp&shadowtls=$(echo -n "$shadowtls_password:$shadowtls_domain" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")#shadowtls-$hostname"
+    
+    echo "$stls_link" > /etc/s-box/shadowtls.txt
+    red "🚀【 VLESS-ShadowTLS 】节点信息如下：" && sleep 2
+    echo
+    echo "分享链接【NekoBox等支持ShadowTLS的客户端】"
+    echo -e "${yellow}$stls_link${plain}"
+    echo
+    echo "二维码【NekoBox等支持ShadowTLS的客户端】"
+    qrencode -o - -t ANSIUTF8 "$(cat /etc/s-box/shadowtls.txt)"
+    white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    echo
+fi
 }
 
 sb_client(){
@@ -1285,6 +1416,7 @@ cat > /etc/s-box/sing_box_client.json <<EOF
 "vmess-argo固定-$hostname",
 "vmess-tls-argo临时-$hostname",
 "vmess-argo临时-$hostname"
+$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"shadowtls-$hostname\""; fi)
       ]
     },
     {
@@ -1479,6 +1611,37 @@ cat > /etc/s-box/sing_box_client.json <<EOF
             "type": "vmess",
             "security": "auto",
             "uuid": "$uuid"
+$(if [ "$shadowtls_enable" = "true" ]; then
+cat <<EOF2
+        {
+            "tag": "shadowtls-$hostname",
+            "type": "shadowtls",
+            "server": "$server_ip",
+            "server_port": $shadowtls_port,
+            "version": 3,
+            "password": "$shadowtls_password",
+            "tls": {
+                "enabled": true,
+                "server_name": "$shadowtls_domain",
+                "utls": {
+                    "enabled": true,
+                    "fingerprint": "chrome"
+                }
+            },
+            "detour": "vless-shadowtls-$hostname"
+        },
+        {
+            "tag": "vless-shadowtls-$hostname",
+            "type": "vless",
+            "server": "127.0.0.1",
+            "server_port": 1080, 
+            "uuid": "$uuid",
+            "flow": "",
+            "detour": "shadowtls-$hostname" 
+        },
+EOF2
+fi)
+
         },
     {
       "tag": "direct",
@@ -1496,6 +1659,7 @@ cat > /etc/s-box/sing_box_client.json <<EOF
 "vmess-argo固定-$hostname",
 "vmess-tls-argo临时-$hostname",
 "vmess-argo临时-$hostname"
+$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"shadowtls-$hostname\""; fi)
       ],
       "url": "https://www.gstatic.com/generate_204",
       "interval": "1m",
@@ -3409,6 +3573,7 @@ openyn
 inssb
 inscertificate
 insport
+insshadowtls
 sleep 2
 echo
 blue "Vless-reality相关key与id将自动生成……"
@@ -4733,8 +4898,8 @@ fi
 }
 
 sbshare(){
-rm -rf /etc/s-box/jhdy.txt /etc/s-box/vl_reality.txt /etc/s-box/vm_ws_argols.txt /etc/s-box/vm_ws_argogd.txt /etc/s-box/vm_ws.txt /etc/s-box/vm_ws_tls.txt /etc/s-box/hy2.txt /etc/s-box/tuic5.txt
-result_vl_vm_hy_tu && resvless && resvmess && reshy2 && restu5
+rm -rf /etc/s-box/jhdy.txt /etc/s-box/vl_reality.txt /etc/s-box/vm_ws_argols.txt /etc/s-box/vm_ws_argogd.txt /etc/s-box/vm_ws.txt /etc/s-box/vm_ws_tls.txt /etc/s-box/hy2.txt /etc/s-box/tuic5.txt /etc/s-box/shadowtls.txt
+result_vl_vm_hy_tu && resvless && resvmess && reshy2 && restu5 && resshadowtls
 cat /etc/s-box/vl_reality.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 cat /etc/s-box/vm_ws_argols.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 cat /etc/s-box/vm_ws_argogd.txt 2>/dev/null >> /etc/s-box/jhdy.txt
@@ -4742,6 +4907,7 @@ cat /etc/s-box/vm_ws.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 cat /etc/s-box/vm_ws_tls.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 cat /etc/s-box/hy2.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 cat /etc/s-box/tuic5.txt 2>/dev/null >> /etc/s-box/jhdy.txt
+cat /etc/s-box/shadowtls.txt 2>/dev/null >> /etc/s-box/jhdy.txt
 baseurl=$(base64 -w 0 < /etc/s-box/jhdy.txt 2>/dev/null)
 v2sub=$(cat /etc/s-box/jhdy.txt 2>/dev/null)
 echo "$v2sub" > /etc/s-box/jh_sub.txt
