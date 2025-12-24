@@ -390,9 +390,9 @@ if [ -z "$menu" ] || [ "$menu" = "1" ]; then
         shadowtls_password=$password
     fi
 
-    readp "\n设置ShadowTLS握手域名 (回车默认 www.bing.com)：" domain
+    readp "\n设置ShadowTLS握手域名 (回车默认 captive.apple.com):" domain
     if [[ -z "$domain" ]]; then
-        shadowtls_domain="www.bing.com"
+        shadowtls_domain="captive.apple.com"
     else
         shadowtls_domain=$domain
     fi
