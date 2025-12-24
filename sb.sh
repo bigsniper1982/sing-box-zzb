@@ -1306,6 +1306,14 @@ fi
 
 sb_client(){
 tls=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.enabled')
+shadowtls_port=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .listen_port")
+if [[ -n "$shadowtls_port" && "$shadowtls_port" != "null" ]]; then
+    shadowtls_enable=true
+    shadowtls_password=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .users[0].password")
+    shadowtls_domain=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .handshake.server")
+else
+    shadowtls_enable=false
+fi
 argopid
 if [[ -n $(ps -e | grep -w $ym 2>/dev/null) && -n $(ps -e | grep -w $ls 2>/dev/null) && "$tls" = "false" ]]; then
 cat > /etc/s-box/sing_box_client.json <<EOF
@@ -1627,8 +1635,7 @@ cat <<EOF2
                     "enabled": true,
                     "fingerprint": "chrome"
                 }
-            },
-            "detour": "vless-shadowtls-$hostname"
+            }
         },
         {
             "tag": "vless-shadowtls-$hostname",
@@ -1659,7 +1666,7 @@ fi)
 "vmess-argo固定-$hostname",
 "vmess-tls-argo临时-$hostname",
 "vmess-argo临时-$hostname"
-$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"shadowtls-$hostname\""; fi)
+$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"vless-shadowtls-$hostname\""; fi)
       ],
       "url": "https://www.gstatic.com/generate_204",
       "interval": "1m",
