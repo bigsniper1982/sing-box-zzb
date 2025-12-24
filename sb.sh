@@ -1305,12 +1305,12 @@ fi
 }
 
 sb_client(){
-tls=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.enabled')
-shadowtls_port=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .listen_port")
+tls=$(jq -r '.inbounds[1].tls.enabled' /etc/s-box/sb.json)
+shadowtls_port=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .listen_port" /etc/s-box/sb.json)
 if [[ -n "$shadowtls_port" && "$shadowtls_port" != "null" ]]; then
     shadowtls_enable=true
-    shadowtls_password=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .users[0].password")
-    shadowtls_domain=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .handshake.server")
+    shadowtls_password=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .users[0].password" /etc/s-box/sb.json)
+    shadowtls_domain=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .handshake.server" /etc/s-box/sb.json)
 else
     shadowtls_enable=false
 fi
