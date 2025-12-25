@@ -1328,7 +1328,8 @@ if [[ "$shadowtls_enable" == "true" ]]; then
     "servers": [
       {
         "tag": "google",
-        "address": "tls://8.8.8.8"
+        "address": "tls://8.8.8.8",
+        "detour": "proxy"
       },
       {
         "tag": "local",
@@ -1338,26 +1339,56 @@ if [[ "$shadowtls_enable" == "true" ]]; then
     ],
     "rules": [
       {
-        "outbound": "any",
+        "clash_mode": "Direct",
+        "action": "route",
         "server": "local"
+      },
+      {
+        "rule_set": "geosite-cn",
+        "action": "route",
+        "server": "local"
+      },
+      {
+        "clash_mode": "Global",
+        "action": "route",
+        "server": "google"
       }
     ],
-    "strategy": "ipv4_only"
+    "final": "google",
+    "strategy": "prefer_ipv4"
   },
   "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "tun0",
+      "address": [
+        "172.19.0.1/30"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    },
     {
       "type": "mixed",
       "tag": "mixed-in",
       "listen": "127.0.0.1",
-      "listen_port": 1080,
-      "sniff": true,
-      "sniff_override_destination": true
+      "listen_port": 2080
     }
   ],
   "outbounds": [
     {
-      "tag": "shadowtls-out",
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "ShadowTLS-$hostname",
+        "direct"
+      ],
+      "default": "ShadowTLS-$hostname"
+    },
+    {
       "type": "shadowtls",
+      "tag": "stls-handshake",
       "server": "$server_ipcl",
       "server_port": $shadowtls_port,
       "version": 3,
@@ -1372,41 +1403,57 @@ if [[ "$shadowtls_enable" == "true" ]]; then
       }
     },
     {
-      "tag": "ss-stls-$hostname",
       "type": "shadowsocks",
-      "server": "127.0.0.1",
-      "server_port": 0,
+      "tag": "ShadowTLS-$hostname",
+      "detour": "stls-handshake",
       "method": "chacha20-ietf-poly1305",
-      "password": "$shadowtls_password",
-      "detour": "shadowtls-out"
+      "password": "$shadowtls_password"
     },
     {
       "type": "direct",
       "tag": "direct"
-    },
-    {
-      "type": "block",
-      "tag": "block"
-    },
-    {
-      "type": "dns",
-      "tag": "dns-out"
     }
   ],
   "route": {
-    "rules": [
+    "rule_set": [
       {
-        "protocol": "dns",
-        "outbound": "dns-out"
+        "tag": "geosite-cn",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
+        "download_detour": "proxy"
       },
       {
-        "ip_is_private": true,
+        "tag": "geoip-cn",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
+        "download_detour": "proxy"
+      }
+    ],
+    "rules": [
+      {
+        "network": "udp",
+        "port": 53,
+        "action": "hijack-dns"
+      },
+      {
+        "network": "tcp",
+        "port": 53,
+        "action": "hijack-dns"
+      },
+      {
+        "rule_set": "geosite-cn",
+        "action": "route",
         "outbound": "direct"
       },
       {
-        "outbound": "ss-stls-$hostname"
+        "rule_set": "geoip-cn",
+        "action": "route",
+        "outbound": "direct"
       }
     ],
+    "final": "proxy",
     "auto_detect_interface": true
   }
 }
@@ -1613,7 +1660,6 @@ $(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"ss-shadowtls-$hos
             "password": "$uuid",
             "congestion_control": "bbr",
             "udp_relay_mode": "native",
-            "udp_over_stream": false,
             "zero_rtt_handshake": false,
             "heartbeat": "10s",
             "tls":{
@@ -2250,7 +2296,6 @@ cat > /etc/s-box/sing_box_client.json <<EOF
             "password": "$uuid",
             "congestion_control": "bbr",
             "udp_relay_mode": "native",
-            "udp_over_stream": false,
             "zero_rtt_handshake": false,
             "heartbeat": "10s",
             "tls":{
@@ -2768,7 +2813,6 @@ cat > /etc/s-box/sing_box_client.json <<EOF
             "password": "$uuid",
             "congestion_control": "bbr",
             "udp_relay_mode": "native",
-            "udp_over_stream": false,
             "zero_rtt_handshake": false,
             "heartbeat": "10s",
             "tls":{
@@ -3282,7 +3326,6 @@ cat > /etc/s-box/sing_box_client.json <<EOF
             "password": "$uuid",
             "congestion_control": "bbr",
             "udp_relay_mode": "native",
-            "udp_over_stream": false,
             "zero_rtt_handshake": false,
             "heartbeat": "10s",
             "tls":{
