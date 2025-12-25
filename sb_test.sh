@@ -373,11 +373,11 @@ if [ -z "$menu" ] || [ "$menu" = "1" ]; then
     chooseport
     port_shadowtls=$port
     
-    # Generate local shadowsocks port
+    # Generate local vless port
     while true; do
         port=$(shuf -i 10000-65535 -n 1)
         if [[ -z $(ss -tunlp | grep -w tcp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") && -z $(ss -tunlp | grep -w udp | awk '{print $5}' | sed 's/.*://g' | grep -w "$port") ]]; then
-            port_ss_local=$port
+            port_vless_local=$port
             break
         fi
     done
@@ -390,9 +390,9 @@ if [ -z "$menu" ] || [ "$menu" = "1" ]; then
         shadowtls_password=$password
     fi
 
-    readp "\n设置ShadowTLS握手域名 (回车默认 captive.apple.com):" domain
+    readp "\n设置ShadowTLS握手域名 (回车默认 www.bing.com)：" domain
     if [[ -z "$domain" ]]; then
-        shadowtls_domain="captive.apple.com"
+        shadowtls_domain="www.bing.com"
     else
         shadowtls_domain=$domain
     fi
@@ -567,32 +567,35 @@ cat > /etc/s-box/sb10.json <<EOF
 $(if [ "$shadowtls" = "true" ]; then
 cat <<EOF_INNER
 ,
-    {
-      "type": "shadowsocks",
-      "tag": "ss-in",
-      "listen": "127.0.0.1",
-      "listen_port": ${port_ss_local},
-      "method": "chacha20-ietf-poly1305",
-      "password": "${shadowtls_password}"
-    },
-    {
-      "type": "shadowtls",
-      "tag": "stls-in",
-      "listen": "::",
-      "listen_port": ${port_shadowtls},
-      "version": 3,
-      "users": [
         {
-          "password": "${shadowtls_password}"
+            "type": "shadowtls",
+            "tag": "shadowtls-in",
+            "listen": "::",
+            "listen_port": ${port_shadowtls},
+            "detour": "vless-shadowtls-in",
+            "version": 3,
+            "users": [
+                {
+                    "password": "${shadowtls_password}"
+                }
+            ],
+            "handshake": {
+                "server": "${shadowtls_domain}",
+                "server_port": 443
+            }
+        },
+        {
+            "type": "vless",
+            "tag": "vless-shadowtls-in",
+            "listen": "127.0.0.1",
+            "listen_port": ${port_vless_local},
+            "users": [
+                {
+                    "uuid": "${uuid}",
+                    "flow": ""
+                }
+            ]
         }
-      ],
-      "handshake": {
-        "server": "${shadowtls_domain}",
-        "server_port": 443
-      },
-      "detour": "ss-in",
-      "strict_mode": true
-    }
 EOF_INNER
 fi)
 ],
@@ -842,32 +845,35 @@ cat > /etc/s-box/sb11.json <<EOF
 $(if [ "$shadowtls" = "true" ]; then
 cat <<EOF_INNER
 ,
-    {
-      "type": "shadowsocks",
-      "tag": "ss-in",
-      "listen": "127.0.0.1",
-      "listen_port": ${port_ss_local},
-      "method": "chacha20-ietf-poly1305",
-      "password": "${shadowtls_password}"
-    },
-    {
-      "type": "shadowtls",
-      "tag": "stls-in",
-      "listen": "::",
-      "listen_port": ${port_shadowtls},
-      "version": 3,
-      "users": [
         {
-          "password": "${shadowtls_password}"
+            "type": "shadowtls",
+            "tag": "shadowtls-in",
+            "listen": "::",
+            "listen_port": ${port_shadowtls},
+            "detour": "vless-shadowtls-in",
+            "version": 3,
+            "users": [
+                {
+                    "password": "${shadowtls_password}"
+                }
+            ],
+            "handshake": {
+                "server": "${shadowtls_domain}",
+                "server_port": 443
+            }
+        },
+        {
+            "type": "vless",
+            "tag": "vless-shadowtls-in",
+            "listen": "127.0.0.1",
+            "listen_port": ${port_vless_local},
+            "users": [
+                {
+                    "uuid": "${uuid}",
+                    "flow": ""
+                }
+            ]
         }
-      ],
-      "handshake": {
-        "server": "${shadowtls_domain}",
-        "server_port": 443
-      },
-      "detour": "ss-in",
-      "strict_mode": true
-    }
 EOF_INNER
 fi)
 ],
@@ -1283,65 +1289,28 @@ resshadowtls(){
 if [[ "$shadowtls_enable" == "true" ]]; then
     echo
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    red "🚀【 Shadowsocks-ShadowTLS-v3 】节点信息如下：" && sleep 2
+    stls_link="vless://$uuid@$server_ip:$shadowtls_port?security=shadowtls&type=tcp&shadowtls=$(echo -n "$shadowtls_password:$shadowtls_domain" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")#shadowtls-$hostname"
+    
+    echo "$stls_link" > /etc/s-box/shadowtls.txt
+    red "🚀【 VLESS-ShadowTLS 】节点信息如下：" && sleep 2
     echo
-    blue "需要使用支持 ShadowTLS v3 的客户端（如 NekoBox、sing-box 等）"
+    echo "分享链接【NekoBox等支持ShadowTLS的客户端】"
+    echo -e "${yellow}$stls_link${plain}"
     echo
-    yellow "服务器地址: $server_ipcl"
-    yellow "端口: $shadowtls_port"
-    yellow "ShadowTLS 密码: $shadowtls_password"
-    yellow "Shadowsocks 加密: chacha20-ietf-poly1305"
-    yellow "Shadowsocks 密码: $shadowtls_password"
-    yellow "TLS 握手域名: $shadowtls_domain"
-    yellow "版本: 3"
-    yellow "严格模式: true"
-    yellow "指纹: chrome"
-    echo
-    green "手动配置参考 (sing-box客户端):"
-    cat > /etc/s-box/shadowtls_config.json <<STLS_EOF
-{
-  "outbounds": [
-    {
-      "tag": "shadowtls-out",
-      "type": "shadowtls",
-      "server": "$server_ipcl",
-      "server_port": $shadowtls_port,
-      "version": 3,
-      "password": "$shadowtls_password",
-      "tls": {
-        "enabled": true,
-        "server_name": "$shadowtls_domain",
-        "utls": {
-          "enabled": true,
-          "fingerprint": "chrome"
-        }
-      }
-    },
-    {
-      "tag": "ss-out",
-      "type": "shadowsocks",
-      "server": "127.0.0.1",
-      "server_port": 0,
-      "method": "chacha20-ietf-poly1305",
-      "password": "$shadowtls_password",
-      "detour": "shadowtls-out"
-    }
-  ]
-}
-STLS_EOF
-    cat /etc/s-box/shadowtls_config.json
+    echo "二维码【NekoBox等支持ShadowTLS的客户端】"
+    qrencode -o - -t ANSIUTF8 "$(cat /etc/s-box/shadowtls.txt)"
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     echo
 fi
 }
 
-sb_client(){
-tls=$(jq -r '.inbounds[1].tls.enabled' /etc/s-box/sb.json)
-shadowtls_port=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .listen_port" /etc/s-box/sb.json)
+sb_client_original(){
+tls=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.enabled')
+shadowtls_port=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .listen_port")
 if [[ -n "$shadowtls_port" && "$shadowtls_port" != "null" ]]; then
     shadowtls_enable=true
-    shadowtls_password=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .users[0].password" /etc/s-box/sb.json)
-    shadowtls_domain=$(jq -r ".inbounds[] | select(.type==\"shadowtls\") | .handshake.server" /etc/s-box/sb.json)
+    shadowtls_password=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .users[0].password")
+    shadowtls_domain=$(sed "s://.*::g" /etc/s-box/sb.json | jq -r ".inbounds[] | select(.type==\"shadowtls\") | .handshake.server")
 else
     shadowtls_enable=false
 fi
@@ -1455,7 +1424,7 @@ cat > /etc/s-box/sing_box_client.json <<EOF
 "vmess-argo固定-$hostname",
 "vmess-tls-argo临时-$hostname",
 "vmess-argo临时-$hostname"
-$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"ss-shadowtls-$hostname\""; fi)
+$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"shadowtls-$hostname\""; fi)
       ]
     },
     {
@@ -1652,11 +1621,10 @@ $(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"ss-shadowtls-$hos
             "uuid": "$uuid"
 $(if [ "$shadowtls_enable" = "true" ]; then
 cat <<EOF2
-        },
         {
             "tag": "shadowtls-$hostname",
             "type": "shadowtls",
-            "server": "$cl_hy2_ip",
+            "server": "$server_ip",
             "server_port": $shadowtls_port,
             "version": 3,
             "password": "$shadowtls_password",
@@ -1670,13 +1638,14 @@ cat <<EOF2
             }
         },
         {
-            "tag": "ss-shadowtls-$hostname",
-            "type": "shadowsocks",
+            "tag": "vless-shadowtls-$hostname",
+            "type": "vless",
             "server": "127.0.0.1",
-            "server_port": 0,
-            "method": "chacha20-ietf-poly1305",
-            "password": "$shadowtls_password",
-            "detour": "shadowtls-$hostname"
+            "server_port": 1080, 
+            "uuid": "$uuid",
+            "flow": "",
+            "detour": "shadowtls-$hostname" 
+        },
 EOF2
 fi)
 
@@ -1697,7 +1666,7 @@ fi)
 "vmess-argo固定-$hostname",
 "vmess-tls-argo临时-$hostname",
 "vmess-argo临时-$hostname"
-$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"ss-shadowtls-$hostname\""; fi)
+$(if [ "$shadowtls_enable" = "true" ]; then echo "," ; echo "\"vless-shadowtls-$hostname\""; fi)
       ],
       "url": "https://www.gstatic.com/generate_204",
       "interval": "1m",
@@ -5459,3 +5428,4 @@ case "$Input" in
 16 ) sbsm;;
  * ) exit 
 esac
+source /root/sing-box-yg/sb.sh; sb_client; cat /etc/s-box/sing_box_client.json
