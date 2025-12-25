@@ -818,8 +818,8 @@ cat > /etc/s-box/sb11.json <<EOF
     },
         {
             "type":"tuic",
-
-     
+            "sniff": true,
+            "sniff_override_destination": true,
             "tag": "tuic5-sb",
             "listen": "::",
             "listen_port": ${port_tu},
