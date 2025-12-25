@@ -1285,21 +1285,75 @@ if [[ "$shadowtls_enable" == "true" ]]; then
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     red "🚀【 Shadowsocks-ShadowTLS-v3 】节点信息如下：" && sleep 2
     echo
-    blue "需要使用支持 ShadowTLS v3 的客户端（如 NekoBox、sing-box 等）"
+    
+    # 生成 NekoBox 分享链接
+    # 格式: ss://method:password@server:port#remark?v2ray-plugin=shadowtls%3Bversion%3D3%3Bhost%3Ddomain%3Bpassword%3Dstls_password
+    ss_userinfo=$(echo -n "chacha20-ietf-poly1305:$shadowtls_password" | base64 -w 0)
+    stls_params="shadowtls;version=3;host=$shadowtls_domain;password=$shadowtls_password"
+    stls_params_encoded=$(echo -n "$stls_params" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")
+    neko_link="ss://${ss_userinfo}@${server_ipcl}:${shadowtls_port}#SS-STLS-${hostname}?v2ray-plugin=${stls_params_encoded}"
+    
+    echo "NekoBox 分享链接："
+    echo -e "${yellow}$neko_link${plain}"
     echo
-    yellow "服务器地址: $server_ipcl"
-    yellow "端口: $shadowtls_port"
-    yellow "ShadowTLS 密码: $shadowtls_password"
-    yellow "Shadowsocks 加密: chacha20-ietf-poly1305"
-    yellow "Shadowsocks 密码: $shadowtls_password"
-    yellow "TLS 握手域名: $shadowtls_domain"
-    yellow "版本: 3"
-    yellow "严格模式: true"
-    yellow "指纹: chrome"
+    echo "NekoBox 二维码："
+    echo "$neko_link" > /etc/s-box/shadowtls_neko.txt
+    qrencode -o - -t ANSIUTF8 "$neko_link"
     echo
-    green "手动配置参考 (sing-box客户端):"
-    cat > /etc/s-box/shadowtls_config.json <<STLS_EOF
+    white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    echo
+    
+    yellow "配置参数："
+    echo "服务器地址: $server_ipcl"
+    echo "端口: $shadowtls_port"
+    echo "ShadowTLS 密码: $shadowtls_password"
+    echo "Shadowsocks 加密: chacha20-ietf-poly1305"
+    echo "Shadowsocks 密码: $shadowtls_password"
+    echo "TLS 握手域名: $shadowtls_domain"
+    echo "版本: v3"
+    echo "严格模式: true"
+    echo "指纹: chrome"
+    echo
+    white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    echo
+    green "Sing-box 完整客户端配置（已保存到 /etc/s-box/shadowtls_client_full.json）:"
+    cat > /etc/s-box/shadowtls_client_full.json <<STLS_EOF
 {
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "google",
+        "address": "tls://8.8.8.8"
+      },
+      {
+        "tag": "local",
+        "address": "223.5.5.5",
+        "detour": "direct"
+      }
+    ],
+    "rules": [
+      {
+        "outbound": "any",
+        "server": "local"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "sniff": true,
+      "sniff_override_destination": true
+    }
+  ],
   "outbounds": [
     {
       "tag": "shadowtls-out",
@@ -1318,18 +1372,46 @@ if [[ "$shadowtls_enable" == "true" ]]; then
       }
     },
     {
-      "tag": "ss-out",
+      "tag": "ss-stls-$hostname",
       "type": "shadowsocks",
       "server": "127.0.0.1",
       "server_port": 0,
       "method": "chacha20-ietf-poly1305",
       "password": "$shadowtls_password",
       "detour": "shadowtls-out"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    },
+    {
+      "type": "dns",
+      "tag": "dns-out"
     }
-  ]
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "outbound": "dns-out"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "outbound": "ss-stls-$hostname"
+      }
+    ],
+    "auto_detect_interface": true
+  }
 }
 STLS_EOF
-    cat /etc/s-box/shadowtls_config.json
+    cat /etc/s-box/shadowtls_client_full.json
     white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
     echo
 fi
